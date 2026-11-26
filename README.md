@@ -45,23 +45,15 @@ Install using [Lazy.nvim](https://github.com/folke/lazy.nvim).
 
 
 ```lua
-
 return {
-
     "tnm-yes-anyidea/keyrics.nvim",
-
     dependencies = { "nvim-telescope/telescope.nvim" },
-
     build = "cd backend && go build -o keyrics main.go",
-
+    cmd = "Keyrics", -- Forces Neovim to recognize the command immediately
     config = function()
-
-        -- Map a key of your choice to launch Keyrics
-
+        require("keyrics")
         vim.keymap.set('n', '<leader>k', ':Keyrics<CR>', { noremap = true, silent = true, desc = "Start Keyrics Typing Test" })
-
     end
-
 }
 
 ```
