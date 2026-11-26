@@ -4,11 +4,7 @@
 
 A  typing test built directly into Neovim, powered by live song lyrics from the [LRCLIB](https://lrclib.net/) API.
 
-
-
 Instead of typing boring programming syntax or random quotes, practice your typing speed by following along to your favorite English songs. `keyrics.nvim` features a Typr-style in-place overwrite UI, a live floating HUD, and a rhythm-based typing mode that syncs with actual song timestamps.
-
-
 
 ## ✨ Features
 
@@ -20,7 +16,21 @@ Instead of typing boring programming syntax or random quotes, practice your typi
 
 * **Three Practice Modes:** Choose between casual typing, live endurance pacing, or rhythm-based LRC synced typing.
 
+## 📸 Screenshots
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/ba30bf21-342e-4584-9fe3-dd8cc3d6d70f" width="80%" alt="Screenshot 1">
+  <br><br>
+  <img src="https://github.com/user-attachments/assets/911cc003-5789-4c5b-86e4-a36c868dd5ae" width="80%" alt="Screenshot 2">
+  <br><br>
+  <img src="https://github.com/user-attachments/assets/f654b681-af2a-42ec-833e-adba2a9fd4d0" width="80%" alt="Screenshot 3">
+  <br><br>
+  <img src="https://github.com/user-attachments/assets/ae00d55d-25ee-4119-96f0-07b0497a23ae" width="80%" alt="Screenshot 4">
+  <br><br>
+  <img src="https://github.com/user-attachments/assets/26f6004a-cd49-4a1c-8381-a419982a2168" width="80%" alt="Screenshot 5">
+  <br><br>
+  <img src="https://github.com/user-attachments/assets/be96ae18-b39d-46ef-9ffb-4f83196ccdf7" width="80%" alt="Screenshot 6">
+</p>
 
 ## ⚡️ Prerequisites
 
