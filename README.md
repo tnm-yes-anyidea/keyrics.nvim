@@ -58,7 +58,6 @@ Install using [Lazy.nvim](https://github.com/folke/lazy.nvim).
 return {
     "tnm-yes-anyidea/keyrics.nvim",
     dependencies = { "nvim-telescope/telescope.nvim" },
-    build = "cd backend && go build -o keyrics main.go",
     cmd = "Keyrics", -- Forces Neovim to recognize the command immediately
     config = function()
         require("keyrics")
