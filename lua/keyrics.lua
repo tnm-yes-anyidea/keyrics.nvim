@@ -5,10 +5,13 @@ local conf = require("telescope.config").values
 local actions = require("telescope.actions")
 local action_state = require("telescope.actions.state")
 
--- Dynamically find the plugin's root directory based on this script's location
+local uv = vim.uv or vim.loop
+
+-- Dynamically resolve the compiled Go binary across Linux, macOS, and Windows
 local script_path = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(script_path, ":p:h:h")
-local KEYRICS_BIN = plugin_root .. "/backend/keyrics"
+local bin_name = vim.fn.has("win32") == 1 and "keyrics.exe" or "keyrics"
+local KEYRICS_BIN = vim.fs.normalize(vim.fs.joinpath(plugin_root, "backend", bin_name))
 
 -- Typr-Style Highlight Groups
 vim.api.nvim_set_hl(0, "KeyricsCorrect", { fg = "#a6e3a1", bold = true })
@@ -23,7 +26,7 @@ local function clean_text(str)
 end
 
 local function parse_synced_lyrics(lrc_str)
-    local lines = vim.split(lrc_str, '\n', { trimempty = true })
+    local lines = vim.split(lrc_str, "\r?\n", { trimempty = true })
     local parsed, delays = {}, {}
     local prev_time = nil
 
@@ -66,7 +69,7 @@ local function start_typing_test(mode, song)
     if mode == 3 then
         lines, delays = parse_synced_lyrics(song.syncedLyrics)
     else
-        local raw_lines = vim.split(song.plainLyrics, '\n', { trimempty = true })
+        local raw_lines = vim.split(song.plainLyrics, "\r?\n", { trimempty = true })
         for _, l in ipairs(raw_lines) do
             local cl = clean_text(l)
             if cl ~= "" then table.insert(lines, cl) end
@@ -85,7 +88,7 @@ local function start_typing_test(mode, song)
 
     local function get_stats()
         if not state.start_time then return 0, 100, 0 end
-        local elapsed = (vim.loop.hrtime() - state.start_time) / 1e9
+        local elapsed = (uv.hrtime() - state.start_time) / 1e9
         local acc_correct = state.total_correct + state.line_correct
         local acc_errors = state.total_errors + state.line_errors
         local wpm = (acc_correct / 5) / (elapsed / 60)
@@ -109,7 +112,7 @@ local function start_typing_test(mode, song)
         })
         vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
         vim.bo[buf].modifiable = false
-        vim.keymap.set('n', 'q', ':q<CR>', { buffer = buf, noremap = true })
+        vim.keymap.set("n", "q", ":q<CR>", { buffer = buf, noremap = true })
         vim.cmd("stopinsert")
     end
 
@@ -212,7 +215,7 @@ local function start_typing_test(mode, song)
     vim.api.nvim_create_autocmd("TextChangedI", {
         buffer = buf,
         callback = function()
-            if not state.start_time then state.start_time = vim.loop.hrtime() end
+            if not state.start_time then state.start_time = uv.hrtime() end
             update_active_line()
 
             -- True exact-length auto advance
@@ -226,7 +229,7 @@ local function start_typing_test(mode, song)
     })
 
     if mode == 3 then
-        state.active_timer = vim.uv.new_timer()
+        state.active_timer = uv.new_timer()
         local function advance_synced()
             if state.idx > #lines then
                 vim.schedule(render_end_screen)
@@ -250,68 +253,79 @@ local function start_typing_test(mode, song)
     end
 end
 
-vim.api.nvim_create_user_command('Keyrics', function()
-    vim.ui.input({ prompt = 'Search LRCLIB (Artist or Song): ' }, function(query)
+vim.api.nvim_create_user_command("Keyrics", function()
+    if not uv.fs_stat(KEYRICS_BIN) then
+        vim.notify(
+            "keyrics.nvim: Backend binary not found at " .. KEYRICS_BIN .. ". Run :Lazy build keyrics.nvim (requires Go).",
+            vim.log.levels.ERROR
+        )
+        return
+    end
+
+    vim.ui.input({ prompt = "Search LRCLIB (Artist or Song): " }, function(query)
         if not query or query == "" then return end
 
-        print("Fetching data from LRCLIB...")
-        local obj = vim.system({ KEYRICS_BIN, query }, { text = true }):wait()
-
-        if obj.code ~= 0 then
-            print("Error executing Go binary.")
-            return
-        end
-
-        local ok, data = pcall(vim.json.decode, obj.stdout)
-        if not ok or type(data) ~= "table" or #data == 0 then
-            print("No lyrics found.")
-            return
-        end
-
-        pickers.new({}, {
-            prompt_title = "Select Track",
-            finder = finders.new_table({
-                results = data,
-                entry_maker = function(song)
-                    local track = (song.trackName and song.trackName ~= vim.NIL) and song.trackName or "Unknown"
-                    local artist = (song.artistName and song.artistName ~= vim.NIL) and song.artistName or "Unknown"
-                    local display_str = string.format("%s - %s", track, artist)
-                    return { value = song, display = display_str, ordinal = display_str }
+        vim.notify("Fetching data from LRCLIB...", vim.log.levels.INFO)
+        vim.system({ KEYRICS_BIN, query }, { text = true }, function(obj)
+            vim.schedule(function()
+                if obj.code ~= 0 then
+                    vim.notify("Error executing Keyrics backend: " .. (obj.stderr or ""), vim.log.levels.ERROR)
+                    return
                 end
-            }),
-            sorter = conf.generic_sorter({}),
-            previewer = previewers.new_buffer_previewer({
-                title = "Lyrics Preview",
-                define_preview = function(self, entry, status)
-                    local text = entry.value.plainLyrics or "No lyrics available."
-                    local prev_lines = vim.split(text, "\n")
-                    vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, prev_lines)
-                    vim.bo[self.state.bufnr].wrap = true
+
+                local ok, data = pcall(vim.json.decode, obj.stdout)
+                if not ok or type(data) ~= "table" or #data == 0 then
+                    vim.notify("No lyrics found.", vim.log.levels.WARN)
+                    return
                 end
-            }),
-            attach_mappings = function(prompt_bufnr, map)
-                actions.select_default:replace(function()
-                    local selection = action_state.get_selected_entry()
-                    if not selection then return end
 
-                    actions.close(prompt_bufnr)
-                    local song = selection.value
-                    local opts = { "1. Normal Typing", "2. Endurance Mode (Live Pacing)" }
-
-                    if song.syncedLyrics and song.syncedLyrics ~= vim.NIL then
-                        table.insert(opts, "3. Synced Typing (LRC Rhythm)")
-                    end
-
-                    vim.ui.select(opts, { prompt = "Mode for " .. song.trackName }, function(choice)
-                        if choice then
-                            local mode = tonumber(choice:sub(1, 1))
-                            start_typing_test(mode, song)
+                pickers.new({}, {
+                    prompt_title = "Select Track",
+                    finder = finders.new_table({
+                        results = data,
+                        entry_maker = function(song)
+                            local track = (song.trackName and song.trackName ~= vim.NIL) and song.trackName or "Unknown"
+                            local artist = (song.artistName and song.artistName ~= vim.NIL) and song.artistName or "Unknown"
+                            local display_str = string.format("%s - %s", track, artist)
+                            return { value = song, display = display_str, ordinal = display_str }
                         end
-                    end)
-                end)
-                return true
-            end,
-        }):find()
+                    }),
+                    sorter = conf.generic_sorter({}),
+                    previewer = previewers.new_buffer_previewer({
+                        title = "Lyrics Preview",
+                        define_preview = function(self, entry, status)
+                            local text = entry.value.plainLyrics or "No lyrics available."
+                            local prev_lines = vim.split(text, "\r?\n")
+                            vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, prev_lines)
+                            vim.bo[self.state.bufnr].wrap = true
+                        end
+                    }),
+                    attach_mappings = function(prompt_bufnr, map)
+                        actions.select_default:replace(function()
+                            local selection = action_state.get_selected_entry()
+                            if not selection then return end
+
+                            actions.close(prompt_bufnr)
+                            local song = selection.value
+                            local track_title = (song.trackName and song.trackName ~= vim.NIL) and song.trackName or "Track"
+                            local opts = { "1. Normal Typing", "2. Endurance Mode (Live Pacing)" }
+
+                            if song.syncedLyrics and song.syncedLyrics ~= vim.NIL then
+                                table.insert(opts, "3. Synced Typing (LRC Rhythm)")
+                            end
+
+                            vim.ui.select(opts, { prompt = "Mode for " .. track_title }, function(choice)
+                                if choice then
+                                    local mode = tonumber(choice:sub(1, 1))
+                                    start_typing_test(mode, song)
+                                end
+                            end)
+                        end)
+                        return true
+                    end,
+                }):find()
+            end)
+        end)
     end)
 end, {})
 
